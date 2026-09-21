@@ -1,0 +1,64 @@
+name: Build Plugins Mgr Payloads
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 unzip wget
+
+      - name: Install PS4 Payload SDK
+        run: |
+          wget -q \
+            https://github.com/ps4-payload-dev/sdk/releases/latest/download/ps4-payload-sdk.zip \
+            -O /tmp/ps4-payload-sdk.zip
+
+          sudo unzip -q -d /opt /tmp/ps4-payload-sdk.zip
+
+          test -d /opt/ps4-payload-sdk
+          ls -la /opt/ps4-payload-sdk
+
+      - name: Build main payload and installer
+        run: |
+          export PS4_PAYLOAD_SDK=/opt/ps4-payload-sdk
+          make clean
+          make
+
+      - name: Verify build outputs
+        run: |
+          test -f ps4-plugins-mgr.elf
+          test -f ps4-plugins-mgr-installer.elf
+
+          ls -lh ps4-plugins-mgr.elf
+          ls -lh ps4-plugins-mgr-installer.elf
+
+      - name: Prepare payload files
+        run: |
+          mkdir -p release/ps4-plugins-mgr
+
+          cp ps4-plugins-mgr.elf \
+            release/ps4-plugins-mgr/
+
+          cp ps4-plugins-mgr-installer.elf \
+            release/ps4-plugins-mgr/
+
+          find release -type f -exec ls -lh {} \;
+
+      - name: Upload payloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps4-plugins-mgr-payloads
+          path: release/ps4-plugins-mgr/
+          if-no-files-found: error
+          retention-days: 30
