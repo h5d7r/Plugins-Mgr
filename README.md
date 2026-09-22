@@ -74,6 +74,9 @@ reduce the chance of leaving an incomplete payload file.
 | `GET` | `/` | Web UI |
 | `GET` | `/api/plugins` | `{ sections, files, ini_exists }` JSON |
 | `GET` | `/api/log` | Log file text |
+| `GET` | `/api/download?name=x` | Download one plugin file as-is |
+| `POST` | `/api/download` | `{"name":"x"}` — one file as-is; `{"names":"a,b,c"}` — ZIP of many files |
+| `POST` | `/api/files` | `{"names":"a,b,c","clean_ini":true}` — delete multiple files, strip ini refs |
 | `POST` | `/api/toggle` | `{"section","path"}` — flip `=true`/`=false`, or legacy `;` comment |
 | `POST` | `/api/entry` | `{"section","path","op":"add\|remove"}` |
 | `POST` | `/api/file` | `{"name","op":"delete\|copy\|move","dest?","clean_ini?":bool}` |
@@ -124,7 +127,7 @@ Then launch the main payload using one of the following:
 After launching the main payload, wait for the notification:
 
 ```text
-plugins mgr v1.0 (c) Haider A.H Listening on <PS4-IP>:4002
+plugins mgr v1.1 (c) Haider A.H Listening on <PS4-IP>:4002
 ```
 
 Then open the displayed address in your browser:
@@ -204,7 +207,7 @@ ps4-plugins-mgr/
 
 ## Credits
 
-* **Plugins Mgr v1.0** by **Haider A.H.**
+* **plugins mgr v1.1** by **Haider A.H.**
 * **Copyright © Haider A.H. All rights reserved.**
 * Built with [ps4-payload-dev/sdk](https://github.com/ps4-payload-dev/sdk).
 * Web-server pattern:

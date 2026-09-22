@@ -120,7 +120,7 @@ int main(void) {
         klog_printf("[plugins-mgr-installer] Installation failed\n");
 
         snprintf(notification, sizeof(notification),
-                 "Plugins Mgr Installer v1.0 (c) Haider A.H installation failed");
+                 "Plugins Mgr Installer v1.1 (c) Haider A.H installation failed");
 
         show_notification(notification);
         return 1;
@@ -130,7 +130,7 @@ int main(void) {
                 INSTALL_PATH);
 
     snprintf(notification, sizeof(notification),
-             "Plugins Mgr Installer v1.0 (c) Haider A.H installed to /data/payloads");
+             "Plugins Mgr Installer v1.1 (c) Haider A.H installed to /data/payloads");
 
     show_notification(notification);
 
