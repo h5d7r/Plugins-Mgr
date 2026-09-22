@@ -165,6 +165,324 @@ static void send_ok(int fd, const char *extra) {
     send_json(fd, b);
 }
 
+/* ---------- file download (single raw file / multi-file zip) ---------- */
+
+static void send_file_download(int fd, const char *path, const char *ctype,
+                               const char *fname) {
+    FILE *fp = fopen(path, "rb");
+    char hdr[512];
+    char buf[8192];
+    long size;
+    size_t r;
+    int hl;
+
+    if (!fp) {
+        send_json_err(fd, 404, "file not found");
+        return;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) < 0 ||
+        fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        send_json_err(fd, 500, "read error");
+        return;
+    }
+    hl = snprintf(hdr, sizeof(hdr),
+                  "HTTP/1.1 200 OK\r\n"
+                  "Content-Type: %s\r\n"
+                  "Content-Disposition: attachment; filename=\"%s\"\r\n"
+                  "Content-Length: %ld\r\n"
+                  "Connection: close\r\n"
+                  "Access-Control-Allow-Origin: *\r\n"
+                  "\r\n",
+                  ctype, fname, size);
+    if (hl > 0 && (size_t)hl < sizeof(hdr)) {
+        send_all(fd, hdr, (size_t)hl);
+    }
+    while ((r = fread(buf, 1, sizeof(buf), fp)) > 0) {
+        send_all(fd, buf, r);
+    }
+    fclose(fp);
+}
+
+static int g_crc32_ready = 0;
+static uint32_t g_crc32_table[256];
+
+static void crc32_init(void) {
+    if (g_crc32_ready) {
+        return;
+    }
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t c = i;
+        for (int k = 0; k < 8; k++) {
+            c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+        }
+        g_crc32_table[i] = c;
+    }
+    g_crc32_ready = 1;
+}
+
+/* Incremental: start with 0xFFFFFFFF, final value is `crc ^ 0xFFFFFFFF`. */
+static uint32_t crc32_update(uint32_t crc, const unsigned char *p, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        crc = g_crc32_table[(crc ^ p[i]) & 0xFFu] ^ (crc >> 8);
+    }
+    return crc;
+}
+
+static void zip_put16(unsigned char *p, unsigned int v) {
+    p[0] = (unsigned char)(v & 0xFFu);
+    p[1] = (unsigned char)((v >> 8) & 0xFFu);
+}
+
+static void zip_put32(unsigned char *p, uint32_t v) {
+    p[0] = (unsigned char)(v & 0xFFu);
+    p[1] = (unsigned char)((v >> 8) & 0xFFu);
+    p[2] = (unsigned char)((v >> 16) & 0xFFu);
+    p[3] = (unsigned char)((v >> 24) & 0xFFu);
+}
+
+#define ZIP_MAX_FILES 256
+#define NAMES_MAX     4096
+
+typedef struct {
+    char name[128];
+    uint32_t crc;
+    long size;
+    long offset;
+} zip_entry_t;
+
+/* "a,b,c" -> list[] of basenames. Returns count (bounded by max). */
+static int split_names(const char *s, char out[][128], int max) {
+    int n = 0;
+    const char *p = s;
+    while (*p && n < max) {
+        const char *q = strchr(p, ',');
+        size_t len = q ? (size_t)(q - p) : strlen(p);
+        if (len >= 128) {
+            len = 127;
+        }
+        memcpy(out[n], p, len);
+        out[n][len] = '\0';
+        n++;
+        if (!q) {
+            break;
+        }
+        p = q + 1;
+    }
+    return n;
+}
+
+/* 1 name -> raw file; >1 name -> STORE-method zip built to a scratch file. */
+static int serve_selected_download(int fd, char names[][128], int n) {
+    static zip_entry_t es[ZIP_MAX_FILES];
+    static char tmp[320], full[320];
+    FILE *zf;
+    long cd_start, cd_size;
+    int count = 0;
+
+    if (n < 1) {
+        send_json_err(fd, 400, "no files");
+        return -1;
+    }
+    crc32_init();
+
+    for (int i = 0; i < n && count < ZIP_MAX_FILES; i++) {
+        FILE *f;
+        uint32_t crc;
+        long size;
+        char buf[8192];
+        size_t r;
+        size_t nl;
+
+        if (!plg_valid_file_name(names[i])) {
+            continue;
+        }
+        snprintf(full, sizeof(full), "%s/%s", PLUGINS_DIR, names[i]);
+        f = fopen(full, "rb");
+        if (!f) {
+            continue;
+        }
+        crc = 0xFFFFFFFFu;
+        size = 0;
+        while ((r = fread(buf, 1, sizeof(buf), f)) > 0) {
+            crc = crc32_update(crc, (const unsigned char *)buf, r);
+            size += (long)r;
+        }
+        fclose(f);
+        nl = strlen(names[i]);
+        if (nl >= sizeof(es[count].name)) {
+            nl = sizeof(es[count].name) - 1;
+        }
+        memcpy(es[count].name, names[i], nl);
+        es[count].name[nl] = '\0';
+        es[count].crc = crc ^ 0xFFFFFFFFu;
+        es[count].size = size;
+        es[count].offset = 0;
+        count++;
+    }
+    if (count == 0) {
+        send_json_err(fd, 404, "no files on disk");
+        return -1;
+    }
+    if (count == 1) {
+        snprintf(full, sizeof(full), "%s/%s", PLUGINS_DIR, es[0].name);
+        send_file_download(fd, full, "application/octet-stream", es[0].name);
+        return 0;
+    }
+
+    snprintf(tmp, sizeof(tmp), "%s%s", MGR_DIR, "/_dl_tmp.zip");
+    plg_ensure_dir(MGR_DIR);
+    zf = fopen(tmp, "wb");
+    if (!zf) {
+        send_json_err(fd, 500, "cannot create zip");
+        plg_log("Zip download failed: cannot open %s", tmp);
+        return -1;
+    }
+
+    for (int i = 0; i < count; i++) {
+        unsigned char hdr[30];
+        FILE *f;
+        char buf[8192];
+        size_t r;
+        size_t nl = strlen(es[i].name);
+
+        es[i].offset = ftell(zf);
+        memset(hdr, 0, sizeof(hdr));
+        hdr[0] = 0x50; hdr[1] = 0x4B; hdr[2] = 0x03; hdr[3] = 0x04;
+        hdr[4] = 20;
+        hdr[8] = 0;
+        hdr[12] = 0x21;
+        zip_put32(hdr + 14, es[i].crc);
+        zip_put32(hdr + 18, (uint32_t)es[i].size);
+        zip_put32(hdr + 22, (uint32_t)es[i].size);
+        zip_put16(hdr + 26, (unsigned int)nl);
+        zip_put16(hdr + 28, 0);
+        fwrite(hdr, 1, sizeof(hdr), zf);
+        fwrite(es[i].name, 1, nl, zf);
+
+        snprintf(full, sizeof(full), "%s/%s", PLUGINS_DIR, es[i].name);
+        f = fopen(full, "rb");
+        if (!f) {
+            fclose(zf);
+            unlink(tmp);
+            send_json_err(fd, 500, "read failed");
+            return -1;
+        }
+        while ((r = fread(buf, 1, sizeof(buf), f)) > 0) {
+            fwrite(buf, 1, r, zf);
+        }
+        fclose(f);
+    }
+
+    cd_start = ftell(zf);
+    for (int i = 0; i < count; i++) {
+        unsigned char hdr[46];
+        size_t nl = strlen(es[i].name);
+
+        memset(hdr, 0, sizeof(hdr));
+        hdr[0] = 0x50; hdr[1] = 0x4B; hdr[2] = 0x01; hdr[3] = 0x02;
+        zip_put16(hdr + 4, 20);
+        zip_put16(hdr + 6, 20);
+        zip_put16(hdr + 14, 0x21);
+        zip_put32(hdr + 16, es[i].crc);
+        zip_put32(hdr + 20, (uint32_t)es[i].size);
+        zip_put32(hdr + 24, (uint32_t)es[i].size);
+        zip_put16(hdr + 28, (unsigned int)nl);
+        zip_put32(hdr + 42, (uint32_t)es[i].offset);
+        fwrite(hdr, 1, sizeof(hdr), zf);
+        fwrite(es[i].name, 1, nl, zf);
+    }
+    cd_size = ftell(zf) - cd_start;
+    {
+        unsigned char hdr[22];
+        memset(hdr, 0, sizeof(hdr));
+        hdr[0] = 0x50; hdr[1] = 0x4B; hdr[2] = 0x05; hdr[3] = 0x06;
+        zip_put16(hdr + 8, (unsigned int)count);
+        zip_put16(hdr + 10, (unsigned int)count);
+        zip_put32(hdr + 12, (uint32_t)cd_size);
+        zip_put32(hdr + 16, (uint32_t)cd_start);
+        fwrite(hdr, 1, sizeof(hdr), zf);
+    }
+    if (fclose(zf) != 0) {
+        unlink(tmp);
+        send_json_err(fd, 500, "zip write failed");
+        return -1;
+    }
+    plg_log("Zip download: %d files", count);
+    send_file_download(fd, tmp, "application/zip", "plugins-mgr.zip");
+    unlink(tmp);
+    return 0;
+}
+
+/* POST /api/download {"name":..} or {"names":"a,b,c"} */
+static void handle_download(int fd, const char *jb) {
+    static char names[NAMES_MAX];
+    static char list[ZIP_MAX_FILES][128];
+    char name[160] = "";
+
+    if (json_get_str(jb, "names", names, sizeof(names)) == 0 && names[0]) {
+        int n = split_names(names, list, ZIP_MAX_FILES);
+        serve_selected_download(fd, list, n);
+        return;
+    }
+    if (json_get_str(jb, "name", name, sizeof(name)) == 0 && name[0]) {
+        char full[320];
+        if (!plg_valid_file_name(name)) {
+            send_json_err(fd, 400, "invalid name");
+            return;
+        }
+        snprintf(full, sizeof(full), "%s/%s", PLUGINS_DIR, name);
+        send_file_download(fd, full, "application/octet-stream", name);
+        return;
+    }
+    send_json_err(fd, 400, "need name or names");
+}
+
+/* POST /api/files {"names":"a,b,c","clean_ini":true} */
+static void handle_files_delete(int fd, const char *jb) {
+    static char names[NAMES_MAX];
+    static char list[ZIP_MAX_FILES][128];
+    static ini_doc_t doc;
+    char clean[16] = "";
+    int clean_ini = 0;
+    int n, deleted = 0;
+
+    if (json_get_str(jb, "names", names, sizeof(names)) != 0) {
+        send_json_err(fd, 400, "need names");
+        return;
+    }
+    if (json_get_str(jb, "clean_ini", clean, sizeof(clean)) == 0) {
+        clean_ini = (strcmp(clean, "true") == 0 || strcmp(clean, "1") == 0);
+    }
+    n = split_names(names, list, ZIP_MAX_FILES);
+    if (n < 1) {
+        send_json_err(fd, 400, "no files");
+        return;
+    }
+    if (clean_ini) {
+        ini_load(&doc);
+    }
+    for (int i = 0; i < n; i++) {
+        if (!plg_valid_file_name(list[i])) {
+            continue;
+        }
+        if (plg_delete_file(list[i]) == 0) {
+            deleted++;
+            if (clean_ini) {
+                ini_remove_by_basename(&doc, list[i]);
+            }
+        }
+    }
+    if (clean_ini && deleted > 0) {
+        ini_commit(&doc);
+    }
+    {
+        char extra[64];
+        snprintf(extra, sizeof(extra), "\"deleted\":%d", deleted);
+        send_ok(fd, extra);
+    }
+}
+
 /* ---------- /api/plugins ---------- */
 
 /* Bounded append helpers: *pos never exceeds cap-1; return -1 when truncated. */
@@ -534,6 +852,18 @@ static void handle_client(int fd) {
         serve_log(fd);
         return;
     }
+    if (strcmp(ri.method, "GET") == 0 && strcmp(ri.path, "/api/download") == 0) {
+        char name[160] = "";
+        char full[320];
+        if (query_get(ri.query, "name", name, sizeof(name)) == 0 && name[0] &&
+            plg_valid_file_name(name)) {
+            snprintf(full, sizeof(full), "%s/%s", PLUGINS_DIR, name);
+            send_file_download(fd, full, "application/octet-stream", name);
+        } else {
+            send_json_err(fd, 400, "invalid name");
+        }
+        return;
+    }
     if (strcmp(ri.method, "POST") == 0 && strcmp(ri.path, "/api/stop") == 0) {
         send_ok(fd, "\"stopped\":true");
         plg_log("Stop requested via /api/stop");
@@ -549,7 +879,9 @@ static void handle_client(int fd) {
     if (strcmp(ri.method, "POST") == 0 &&
         (strcmp(ri.path, "/api/toggle") == 0 ||
          strcmp(ri.path, "/api/entry") == 0 ||
-         strcmp(ri.path, "/api/file") == 0)) {
+         strcmp(ri.path, "/api/file") == 0 ||
+         strcmp(ri.path, "/api/files") == 0 ||
+         strcmp(ri.path, "/api/download") == 0)) {
         static char jb[JSON_MAX];
         static ini_doc_t doc;
         long got;
@@ -565,6 +897,14 @@ static void handle_client(int fd) {
             return;
         }
 
+        if (strcmp(ri.path, "/api/download") == 0) {
+            handle_download(fd, jb);
+            return;
+        }
+        if (strcmp(ri.path, "/api/files") == 0) {
+            handle_files_delete(fd, jb);
+            return;
+        }
         if (strcmp(ri.path, "/api/toggle") == 0) {
             char section[INI_SECT_SZ], path[INI_PATH_SZ];
             if (json_get_str(jb, "section", section, sizeof(section)) != 0 ||

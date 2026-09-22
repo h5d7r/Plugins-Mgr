@@ -134,6 +134,51 @@
       font-size: 11px; color: var(--dm); margin-left: auto;
     }
     .filter-bar .count span { color: var(--tx); font-weight: 600 }
+    .view-toggle { display: flex; gap: 4px }
+    .view-toggle .sort-btn.active { border-color: var(--ac); color: #fff; background: var(--ac) }
+    .sel-bar {
+      height: 40px; background: var(--s1);
+      border-bottom: 1px solid var(--bd);
+      display: none; align-items: center; gap: 10px;
+      padding: 0 20px; flex-shrink: 0;
+    }
+    .sel-bar.show { display: flex }
+    .sel-bar .count-label {
+      font-size: 11px; font-weight: 600; color: var(--tx);
+      letter-spacing: .5px; text-transform: uppercase;
+    }
+    .sel-bar .count-label span { color: var(--ac) }
+    .sel-bar .sort-btn.dl { border-color: var(--ac); color: var(--ac) }
+    .sel-bar .sort-btn.dl:hover { background: var(--ac); color: #fff }
+    .sel-bar .sort-btn.del { border-color: var(--er); color: var(--er) }
+    .sel-bar .sort-btn.del:hover { background: var(--er); color: #fff }
+    .sel-bar .clear { margin-left: auto }
+    .list { display: none }
+    .gallery.list-mode .grid { display: none }
+    .gallery.list-mode .list { display: block }
+    .list-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--s1); border: 1px solid var(--bd);
+      border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+      cursor: pointer; transition: all .2s;
+    }
+    .list-row:hover { border-color: var(--ac); box-shadow: 0 0 12px var(--gl) }
+    .list-row.selected { border-color: var(--ac); box-shadow: 0 0 12px var(--gl) }
+    .row-check { width: 15px; height: 15px; cursor: pointer; accent-color: var(--ac); flex-shrink: 0 }
+    .card .sel-box {
+      position: absolute; top: 6px; left: 6px; z-index: 2;
+      width: 15px; height: 15px; cursor: pointer; accent-color: var(--ac);
+    }
+    .card.selected { border-color: var(--ac); box-shadow: 0 0 12px var(--gl) }
+    .row-icon { width: 26px; height: 26px; color: var(--dm); flex-shrink: 0 }
+    .row-icon svg { width: 100%; height: 100%; stroke: var(--dm); fill: none; stroke-width: 1.5; display: block; pointer-events: none }
+    .list-row.enabled .row-icon svg { stroke: var(--ac2); filter: drop-shadow(0 0 8px var(--gl)) }
+    .row-name { flex: 1; min-width: 0 }
+    .row-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .row-sub { font-size: 10px; color: var(--dm); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .row-meta { font-size: 10px; color: var(--dm); text-align: right; flex-shrink: 0 }
+    .row-actions { display: flex; gap: 6px; flex-shrink: 0 }
+    .card-btn.del svg { width: 14px; height: 14px }
     .gallery {
       flex: 1; overflow-y: auto; padding: 16px 20px;
     }
@@ -318,7 +363,11 @@
     #modalDownload:hover { background: var(--ac); color: #fff }
     .modal.confirm { max-width: 360px; width: 90%; }
     #confirmBody { padding: 20px; font-size: 13px; color: var(--tx); text-align: center; }
-    #confirmOk { margin-left: 8px; }
+    #confirmOk {
+      margin-left: 8px;
+      background: var(--er); border-color: var(--er); color: #fff;
+    }
+    #confirmOk:hover { background: #ff4455 }
     #confirmCancel { border-color: var(--ac); color: var(--ac) }
     #confirmCancel:hover { background: var(--ac); color: #fff }
     .empty {
@@ -375,11 +424,22 @@
   <select id='sectFilter'><option value=''>All sections</option></select>
   <button class='sort-btn' id='sortBtn' title='Toggle sort'>A-Z</button>
   <input type='text' id='search' placeholder='Search files...'>
+  <div class='view-toggle'>
+    <button class='sort-btn active' id='viewGrid' title='Grid view'>Grid</button>
+    <button class='sort-btn' id='viewList' title='List view'>List</button>
+  </div>
+  <button class='sort-btn' id='selectAllBtn' title='Select/unselect all filtered'>Select all</button>
   <button class='sort-btn' id='uploadBtn' title='Upload file'>+ Upload</button>
   <button class='sort-btn' id='addBtn' title='Add ini entry'>+ Entry</button>
   <div class='count' id='count'>showing <span>0</span></div>
 </div>
-<div class='gallery'><div class='grid' id='grid'></div><div class='empty' id='empty' style='display:none'>
+<div class='sel-bar' id='selBar'>
+  <div class='count-label'><span id='selCount'>0</span> selected</div>
+  <button class='sort-btn dl' id='selDownload' title='Download selected'>Download</button>
+  <button class='sort-btn del' id='selDelete' title='Delete selected'>Delete</button>
+  <button class='sort-btn clear' id='selClear' title='Clear selection'>Clear</button>
+</div>
+<div class='gallery' id='gallery'><div class='grid' id='grid'></div><div class='list' id='list'></div><div class='empty' id='empty' style='display:none'>
   <div class='icon'>&#9673;</div>  <div class='msg'>No files found</div>
   <div class='sub'>Upload a file or add an entry to plugins.ini</div>
 </div></div>
@@ -398,7 +458,7 @@
   <div id='confirmBody'></div>
   <div class='modal-footer'><div class='info'></div>
     <button class='btn' id='confirmCancel'>Cancel</button>
-    <button class='btn primary' id='confirmOk'>OK</button>
+    <button class='btn danger' id='confirmOk'>OK</button>
   </div>
 </div></div>
 <div class='modal-overlay' id='addModal'><div class='modal' style='max-width:420px;width:90%'>
@@ -418,13 +478,25 @@
 </div></div>
 <div id='toast'></div>
 <script>
-var S={sections:[],files:[],tab:'all',sect:'',q:'',asc:true,sel:null};
+var S={sections:[],files:[],tab:'all',sect:'',q:'',asc:true,sel:null,view:'grid',selected:{}};
 var $=function(id){return document.getElementById(id);};
 function toast(m,e){var t=$('toast');t.textContent=m;t.className=e?'show err':'show';setTimeout(function(){t.className='';},2200);}
 function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return (b/1024).toFixed(1)+' KB';return (b/1048576).toFixed(2)+' MB';}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function allEntries(){var r=[];S.sections.forEach(function(s){s.entries.forEach(function(e){r.push({section:s.id,path:e.path,file:e.file,enabled:e.enabled});});});return r;}
 function fileInfo(n){for(var i=0;i<S.files.length;i++)if(S.files[i].name===n)return S.files[i];return null;}
+function selectedNames(){var out=[];for(var k in S.selected)if(S.selected[k])out.push(k);return out;}
+function syncSelUI(){
+  var n=selectedNames().length;
+  $('selBar').classList.toggle('show',n>0);
+  $('selCount').textContent=n;
+  var rows=document.querySelectorAll('.card,.list-row');
+  for(var i=0;i<rows.length;i++){var nm=rows[i].getAttribute('data-name');if(nm)rows[i].classList.toggle('selected',!!S.selected[nm]);}
+  var boxes=document.querySelectorAll('.sel-box,.row-check');
+  for(var j=0;j<boxes.length;j++){var fn=boxes[j].getAttribute('data-file');if(fn)boxes[j].checked=!!S.selected[fn];}
+}
+function setSel(name,on){if(on)S.selected[name]=true;else delete S.selected[name];syncSelUI();}
+function clearSel(){S.selected={};syncSelUI();}
 async function load(){try{var r=await fetch('/api/plugins');var j=await r.json();S.sections=j.sections||[];S.files=j.files||[];buildSect();buildAddPick();render();}catch(e){toast('Failed to load plugins',1);}}
 function buildSect(){var s=$('sectFilter');var cur=s.value;s.innerHTML='<option value="">All sections</option>';S.sections.forEach(function(x){var o=document.createElement('option');o.value=x.id;o.textContent=x.id+' ('+x.entries.length+')';s.appendChild(o);});s.value=cur;}
 function buildAddPick(){var p=$('addPick');var cur=p.value;p.innerHTML='<option value="">-- or type filename below --</option>';S.files.forEach(function(f){var o=document.createElement('option');o.value=f.name;o.textContent=f.name;p.appendChild(o);});p.value=cur;}
@@ -437,19 +509,73 @@ function filtered(){var es=allEntries();var out=[];
   return out;}
 function badge(e){if(e.unlisted)return "<span class='type-badge photo'>unlisted</span>";return e.enabled?"<span class='type-badge on'>on</span>":"<span class='type-badge off'>off</span>";}
 var PUZZLE="<svg viewBox='0 0 24 24'><path d='M14 7V5a2 2 0 0 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2h-3z'/></svg>";
-function render(){var list=filtered();var g=$('grid');g.innerHTML='';
+var TRASH="<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18M8 6V4h8v2m1 0v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/></svg>";
+function render(){var list=filtered();var g=$('grid'),l=$('list');
+  g.innerHTML='';l.innerHTML='';
   $('empty').style.display=list.length?'none':'flex';
   $('count').innerHTML='showing <span>'+list.length+'</span>';
   var n=allEntries().length;$('status').innerHTML='<span>'+n+'</span> plugins';
-  list.forEach(function(e){var f=fileInfo(e.file);var sz=f?fmtSize(f.size):'missing';
-    var d=document.createElement('div');d.className='card'+(e.enabled?' enabled':'');
-    d.innerHTML="<div class='card-thumb'>"+PUZZLE+"</div><div class='card-info'><div class='card-title'>"+esc(e.file)+"</div><div class='card-meta'><span>"+esc(e.section||'disk')+"</span><span>"+sz+"</span></div><div style='margin-top:4px'>"+badge(e)+"</div><div class='card-actions'><button class='card-btn dl'>"+(e.unlisted?'Add':(e.enabled?'Disable':'Enable'))+"</button><button class='card-btn'>Details</button><button class='card-btn del'>X</button></div></div>";
-    var btns=d.querySelectorAll('.card-btn');
-    btns[0].onclick=function(ev){ev.stopPropagation();if(e.unlisted)openAddModal('default',e.file);else toggle(e);};
-    btns[1].onclick=function(ev){ev.stopPropagation();openModal(e);};
-    btns[2].onclick=function(ev){ev.stopPropagation();askDelete(e);};
-    d.onclick=function(){openModal(e);};
-    g.appendChild(d);});}
+  $('gallery').classList.toggle('list-mode',S.view==='list');
+  var host=S.view==='list'?l:g;
+  list.forEach(function(e){renderItem(host,e);});
+  syncSelUI();}
+function renderItem(el,e){var f=fileInfo(e.file);var sz=f?fmtSize(f.size):'missing';
+  var d=document.createElement('div');
+  if(S.view==='list'){
+    d.className='list-row'+(e.enabled?' enabled':'');
+    d.setAttribute('data-name',e.file);
+    d.innerHTML="<input type='checkbox' class='row-check' data-file='"+esc(e.file)+"'><div class='row-icon'>"+PUZZLE+"</div><div class='row-name'><div class='row-title'>"+esc(e.file)+"</div><div class='row-sub'>"+esc(e.section||'disk')+" "+badge(e)+"</div></div><div class='row-meta'>"+sz+"</div><div class='row-actions'><button class='card-btn dl'>"+(e.unlisted?'Add':(e.enabled?'Disable':'Enable'))+"</button><button class='card-btn'>Details</button><button class='card-btn del'>"+TRASH+"</button></div>";
+  } else {
+    d.className='card'+(e.enabled?' enabled':'');
+    d.setAttribute('data-name',e.file);
+    d.innerHTML="<input type='checkbox' class='sel-box' data-file='"+esc(e.file)+"'><div class='card-thumb'>"+PUZZLE+"</div><div class='card-info'><div class='card-title'>"+esc(e.file)+"</div><div class='card-meta'><span>"+esc(e.section||'disk')+"</span><span>"+sz+"</span></div><div style='margin-top:4px'>"+badge(e)+"</div><div class='card-actions'><button class='card-btn dl'>"+(e.unlisted?'Add':(e.enabled?'Disable':'Enable'))+"</button><button class='card-btn'>Details</button><button class='card-btn del'>"+TRASH+"</button></div></div>";
+  }
+  var btns=d.querySelectorAll('.card-btn');
+  btns[0].onclick=function(ev){ev.stopPropagation();if(e.unlisted)openAddModal('default',e.file);else toggle(e);};
+  btns[1].onclick=function(ev){ev.stopPropagation();openModal(e);};
+  btns[2].onclick=function(ev){ev.stopPropagation();askDelete(e);};
+  var box=d.querySelector('.sel-box,.row-check');
+  box.onclick=function(ev){ev.stopPropagation();setSel(e.file,box.checked);};
+  d.onclick=function(){openModal(e);};
+  el.appendChild(d);}
+function toggleSelectAll(){
+  var list=filtered();
+  if(!list.length)return;
+  var allOn=list.every(function(e){return S.selected[e.file];});
+  list.forEach(function(e){if(allOn)delete S.selected[e.file];else S.selected[e.file]=true;});
+  render();}
+function downloadSelected(){
+  var names=selectedNames();
+  if(!names.length){toast('Nothing selected',1);return;}
+  if(names.length===1){
+    var a=document.createElement('a');
+    a.href='/api/download?name='+encodeURIComponent(names[0]);
+    a.download=names[0];
+    document.body.appendChild(a);a.click();a.remove();
+    return;
+  }
+  toast('Packing '+names.length+' files into zip...');
+  fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({names:names.join(',')})})
+    .then(function(r){if(!r.ok)throw new Error('failed');return r.blob();})
+    .then(function(blob){
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;a.download='plugins-mgr.zip';
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(function(){URL.revokeObjectURL(url);},2000);
+      toast('Downloading plugins-mgr.zip');
+    })
+    .catch(function(){toast('Zip download failed',1);});
+}
+function askDeleteSelected(){
+  var names=selectedNames();
+  if(!names.length){toast('Nothing selected',1);return;}
+  var shown=names.slice(0,3).join(', ');
+  var msg='Delete '+names.length+' file'+(names.length>1?'s':'')+'? '+shown+(names.length>3?' +'+(names.length-3)+' more':'')+' — files and ini refs are removed.';
+  confirmBox(msg,async function(){
+    var j=await post('/api/files',{names:names.join(','),clean_ini:'true'});
+    if(j.ok){toast('Deleted '+j.deleted+' file'+(j.deleted===1?'':'s'));clearSel();closeModal();load();}
+    else toast(j.error||'Delete failed',1);});}
 async function post(url,body){var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.json();}
 async function toggle(e){var j=await post('/api/toggle',{section:e.section,path:e.path});if(j.ok){toast('Toggled '+e.file);load();}else toast(j.error||'Toggle failed',1);}
 function openAddModal(section,file){
@@ -514,6 +640,12 @@ $('search').oninput=function(e){S.q=e.target.value.toLowerCase();render();};
 $('sortBtn').onclick=function(){S.asc=!S.asc;$('sortBtn').textContent=S.asc?'A-Z':'Z-A';render();};
 $('addBtn').onclick=function(){openAddModal('default','');};
 $('uploadBtn').onclick=function(){$('fileInput').click();};
+$('viewGrid').onclick=function(){S.view='grid';$('viewGrid').classList.add('active');$('viewList').classList.remove('active');render();};
+$('viewList').onclick=function(){S.view='list';$('viewList').classList.add('active');$('viewGrid').classList.remove('active');render();};
+$('selectAllBtn').onclick=toggleSelectAll;
+$('selDownload').onclick=downloadSelected;
+$('selDelete').onclick=askDeleteSelected;
+$('selClear').onclick=clearSel;
 $('fileInput').onchange=async function(){var f=$('fileInput').files[0];if(!f)return;
   toast('Uploading '+f.name+'...');
   try{var r=await fetch('/api/upload?filename='+encodeURIComponent(f.name),{method:'POST',body:f});var j=await r.json();if(j.ok){toast('Uploaded '+f.name);load();}else toast(j.error||'Upload failed',1);}catch(e){toast('Upload failed',1);}
