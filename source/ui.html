@@ -406,7 +406,7 @@
 </head>
 <body>
 <nav>
-  <div class='logo'>Plugins Mgr<span class='version'>v1.0 :4002</span></div>
+  <div class='logo'>Plugins Mgr<span class='version'>v1.1 :4002</span></div>
   <button class='tab active' data-tab='all'>All</button>
   <button class='tab' data-tab='enabled'>Enabled</button>
   <button class='tab' data-tab='disabled'>Disabled</button>
@@ -425,7 +425,7 @@
   <button class='sort-btn' id='sortBtn' title='Toggle sort'>A-Z</button>
   <input type='text' id='search' placeholder='Search files...'>
   <div class='view-toggle'>
-    <button class='sort-btn active' id='viewGrid' title='Grid view'>Grid</button>
+    <button class='sort-btn' id='viewGrid' title='Grid view'>Grid</button>
     <button class='sort-btn' id='viewList' title='List view'>List</button>
   </div>
   <button class='sort-btn' id='selectAllBtn' title='Select/unselect all filtered'>Select all</button>
@@ -478,7 +478,7 @@
 </div></div>
 <div id='toast'></div>
 <script>
-var S={sections:[],files:[],tab:'all',sect:'',q:'',asc:true,sel:null,view:'grid',selected:{}};
+var S={sections:[],files:[],tab:'all',sect:'',q:'',asc:true,sel:null,view:(window.innerWidth>=768)?'list':'grid',selected:{}};
 var $=function(id){return document.getElementById(id);};
 function toast(m,e){var t=$('toast');t.textContent=m;t.className=e?'show err':'show';setTimeout(function(){t.className='';},2200);}
 function fmtSize(b){if(b<1024)return b+' B';if(b<1048576)return (b/1024).toFixed(1)+' KB';return (b/1048576).toFixed(2)+' MB';}
@@ -640,8 +640,10 @@ $('search').oninput=function(e){S.q=e.target.value.toLowerCase();render();};
 $('sortBtn').onclick=function(){S.asc=!S.asc;$('sortBtn').textContent=S.asc?'A-Z':'Z-A';render();};
 $('addBtn').onclick=function(){openAddModal('default','');};
 $('uploadBtn').onclick=function(){$('fileInput').click();};
-$('viewGrid').onclick=function(){S.view='grid';$('viewGrid').classList.add('active');$('viewList').classList.remove('active');render();};
-$('viewList').onclick=function(){S.view='list';$('viewList').classList.add('active');$('viewGrid').classList.remove('active');render();};
+function setView(v){S.view=v;$('viewGrid').classList.toggle('active',v==='grid');$('viewList').classList.toggle('active',v==='list');render();}
+$('viewGrid').onclick=function(){setView('grid');};
+$('viewList').onclick=function(){setView('list');};
+setView(S.view);
 $('selectAllBtn').onclick=toggleSelectAll;
 $('selDownload').onclick=downloadSelected;
 $('selDelete').onclick=askDeleteSelected;

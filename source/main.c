@@ -115,7 +115,7 @@ int main(void) {
     get_device_ip(device_ip, sizeof(device_ip));
 
     snprintf(notification, sizeof(notification),
-             "plugins mgr v1.0 (c) Haider A.H Listening on %s:%d",
+             "plugins mgr v1.1 (c) Haider A.H Listening on %s:%d",
              device_ip, SERVER_PORT);
 
     show_notification(notification);
@@ -124,7 +124,7 @@ int main(void) {
         plg_log("Payload exiting due to server error");
 
         show_notification(
-            "plugins mgr v1.0 (c) Haider A.H Server stopped with error");
+            "plugins mgr v1.1 (c) Haider A.H Server stopped with error");
 
         return 1;
     }
@@ -132,7 +132,7 @@ int main(void) {
     plg_log("Payload exiting normally");
 
     show_notification(
-        "plugins mgr v1.0 (c) Haider A.H Server stopped");
+        "plugins mgr v1.1 (c) Haider A.H Server stopped");
 
     return 0;
 }
